@@ -1,5 +1,5 @@
 /*
-  # Sistema de Gestión de Efectivo - Tienda Catu
+  #Gestión de Fondo Rotativo - Tienda Catu
   
   ## Tablas Principales
   
