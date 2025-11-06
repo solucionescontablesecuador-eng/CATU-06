@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Clock, Loader2, AlertCircle, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Plus, Trash2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { EmpleadoSelector } from "@/components/EmpleadoSelector";
 
 const ArqueoCaja = () => {
   const navigate = useNavigate();
@@ -20,9 +21,11 @@ const ArqueoCaja = () => {
   const [userId, setUserId] = useState<string>("");
   const [aperturaActiva, setAperturaActiva] = useState<any>(null);
   const [umbralDiferencia, setUmbralDiferencia] = useState(2.00);
-  
+
   const [formData, setFormData] = useState({
+    empleadoId: "",
     montoContado: "",
+    montoFinal: "",
     comentario: "",
   });
 
@@ -37,15 +40,17 @@ const ArqueoCaja = () => {
   }, []);
 
   useEffect(() => {
-    if (formData.montoContado && aperturaActiva) {
-      const contado = parseFloat(formData.montoContado);
-      const esperado = aperturaActiva.monto_inicial;
+    if (formData.montoFinal && pagosProveedores.length > 0) {
+      const montoFinalNum = parseFloat(formData.montoFinal);
       const totalPagos = pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.valor) || 0), 0);
-      setDiferencia(contado - esperado + totalPagos);
+      const totalSaldo = pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.saldo) || 0), 0);
+
+      const diferenciaCalculada = totalSaldo - totalPagos;
+      setDiferencia(diferenciaCalculada);
     } else {
       setDiferencia(null);
     }
-  }, [formData.montoContado, aperturaActiva, pagosProveedores]);
+  }, [formData.montoFinal, pagosProveedores]);
 
   const agregarPagoProveedor = () => {
     setPagosProveedores([...pagosProveedores, {
@@ -83,6 +88,17 @@ const ArqueoCaja = () => {
           }
         }
 
+        if (campo === "saldo") {
+          const saldoNum = parseFloat(valor) || 0;
+          if (formData.montoFinal && saldoNum > parseFloat(formData.montoFinal)) {
+            toast({
+              title: "Advertencia",
+              description: "El saldo no puede ser mayor al monto final",
+              variant: "destructive",
+            });
+          }
+        }
+
         return updated;
       }
       return pago;
@@ -91,11 +107,9 @@ const ArqueoCaja = () => {
 
   const loadData = async () => {
     try {
-      // Sin autenticación - usar ID fijo
       const userId = "00000000-0000-0000-0000-000000000000";
       setUserId(userId);
 
-      // Obtener umbral de diferencia
       const { data: umbralParam } = await supabase
         .from("parametros")
         .select("valor")
@@ -106,13 +120,18 @@ const ArqueoCaja = () => {
         setUmbralDiferencia(parseFloat(umbralParam.valor));
       }
 
-      // Buscar apertura activa
       const { data: turnosData } = await supabase
         .from("turnos")
         .select(`
           id,
           fecha,
           hora_inicio,
+          empleado_id,
+          empleados (
+            id,
+            nombre_completo,
+            cargo
+          ),
           cajas (nombre, ubicacion),
           aperturas (
             id,
@@ -126,7 +145,7 @@ const ArqueoCaja = () => {
         .order("created_at", { ascending: false });
 
       if (turnosData && turnosData.length > 0) {
-        const turnoConApertura = turnosData.find((t: any) => 
+        const turnoConApertura = turnosData.find((t: any) =>
           t.aperturas && t.aperturas.length > 0 && !t.aperturas[0].cerrada
         );
 
@@ -138,7 +157,16 @@ const ArqueoCaja = () => {
             caja: turnoConApertura.cajas,
             fecha: turnoConApertura.fecha,
             hora_inicio: turnoConApertura.hora_inicio,
+            empleado: turnoConApertura.empleados,
+            empleado_id: turnoConApertura.empleado_id,
           });
+
+          if (turnoConApertura.empleado_id) {
+            setFormData(prev => ({
+              ...prev,
+              empleadoId: turnoConApertura.empleado_id
+            }));
+          }
         }
       }
     } catch (error: any) {
@@ -154,7 +182,7 @@ const ArqueoCaja = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!aperturaActiva) {
       toast({
         title: "Error",
@@ -164,7 +192,15 @@ const ArqueoCaja = () => {
       return;
     }
 
-    // Validar comentario si diferencia supera umbral
+    if (!formData.empleadoId) {
+      toast({
+        title: "Campo requerido",
+        description: "Debes seleccionar un empleado",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (diferencia !== null && Math.abs(diferencia) > umbralDiferencia && !formData.comentario.trim()) {
       toast({
         title: "Comentario requerido",
@@ -178,16 +214,17 @@ const ArqueoCaja = () => {
 
     try {
       const montoContado = parseFloat(formData.montoContado);
+      const montoFinal = parseFloat(formData.montoFinal);
       const montoEsperado = aperturaActiva.monto_inicial;
-      const diferenciaFinal = montoContado - montoEsperado;
+      const diferenciaFinal = diferencia || 0;
 
-      // Crear arqueo
       const { data: arqueoData, error: arqueoError } = await supabase
         .from("arqueos")
         .insert({
           apertura_id: aperturaActiva.apertura_id,
           monto_contado: montoContado,
           monto_esperado: montoEsperado,
+          monto_final: montoFinal,
           diferencia: diferenciaFinal,
           comentario: formData.comentario || null,
         })
@@ -196,7 +233,19 @@ const ArqueoCaja = () => {
 
       if (arqueoError) throw arqueoError;
 
-      // Cerrar apertura
+      for (const pago of pagosProveedores) {
+        if (pago.proveedor && pago.valor) {
+          await supabase.from("pagos_proveedores").insert({
+            proveedor: pago.proveedor,
+            tipo_documento: pago.tipo_documento,
+            numero_documento: pago.numero_documento,
+            valor: parseFloat(pago.valor),
+            saldo: parseFloat(pago.saldo) || 0,
+            pagado_por: pago.pagado_por,
+          });
+        }
+      }
+
       const { error: aperturaError } = await supabase
         .from("aperturas")
         .update({ cerrada: true })
@@ -204,19 +253,19 @@ const ArqueoCaja = () => {
 
       if (aperturaError) throw aperturaError;
 
-      // Cerrar turno
       const { error: turnoError } = await supabase
         .from("turnos")
-        .update({ 
+        .update({
           estado: "cerrado",
-          hora_fin: new Date().toTimeString().slice(0, 5)
+          hora_fin: new Date().toTimeString().slice(0, 5),
+          empleado_id: formData.empleadoId
         })
         .eq("id", aperturaActiva.turno_id);
 
       if (turnoError) throw turnoError;
 
       toast({
-        title: "¡Arqueo completado!",
+        title: "Arqueo completado",
         description: "El turno ha sido cerrado correctamente",
       });
 
@@ -246,17 +295,17 @@ const ArqueoCaja = () => {
   if (!aperturaActiva) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b bg-card">
-          <div className="container mx-auto px-4 py-4">
+        <header className="border-b bg-card shadow-sm">
+          <div className="container mx-auto px-6 py-6">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="icon" onClick={() => navigate("/")}>
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <h1 className="text-xl font-bold">Arqueo de Caja</h1>
+              <h1 className="text-2xl font-bold">Arqueo de Caja</h1>
             </div>
           </div>
         </header>
-        <main className="container mx-auto px-4 py-8 max-w-2xl">
+        <main className="container mx-auto px-6 py-8 max-w-4xl">
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -275,51 +324,74 @@ const ArqueoCaja = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b bg-card shadow-sm">
+        <div className="container mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-secondary rounded-lg">
-                <Clock className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Arqueo de Caja</h1>
-                <p className="text-sm text-muted-foreground">Cierre de turno</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold">Arqueo de Caja</h1>
+              <p className="text-sm text-muted-foreground">Cierre de turno</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
-        <Card className="mb-4">
+      <main className="container mx-auto px-6 py-8 max-w-6xl">
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Información del Turno Activo</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Caja:</span>
-              <span className="font-medium">{aperturaActiva.caja.nombre}</span>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Caja:</span>
+                <span className="font-medium">{aperturaActiva.caja.nombre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Fecha:</span>
+                <span className="font-medium">{new Date(aperturaActiva.fecha).toLocaleDateString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Hora inicio:</span>
+                <span className="font-medium">{aperturaActiva.hora_inicio}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Monto inicial:</span>
+                <span className="font-medium text-lg">${aperturaActiva.monto_inicial.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Fecha:</span>
-              <span className="font-medium">{new Date(aperturaActiva.fecha).toLocaleDateString()}</span>
+
+            <div className="space-y-2 pt-4 border-t">
+              <Label>Empleado</Label>
+              <EmpleadoSelector
+                value={formData.empleadoId}
+                onChange={(value) => setFormData({ ...formData, empleadoId: value })}
+                required
+              />
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Hora inicio:</span>
-              <span className="font-medium">{aperturaActiva.hora_inicio}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Monto inicial:</span>
-              <span className="font-medium text-lg">${aperturaActiva.monto_inicial.toFixed(2)}</span>
+
+            <div className="space-y-2">
+              <Label htmlFor="montoFinal">Monto Final (USD)</Label>
+              <Input
+                id="montoFinal"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.montoFinal}
+                onChange={(e) => setFormData({ ...formData, montoFinal: e.target.value })}
+                placeholder="0.00"
+                className="w-full"
+              />
+              <p className="text-sm text-muted-foreground">
+                Este monto representa el saldo total de ventas del turno
+              </p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="mb-4">
+        <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -336,7 +408,7 @@ const ArqueoCaja = () => {
           </CardHeader>
           <CardContent>
             {pagosProveedores.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">No hay pagos registrados</p>
+              <p className="text-center text-muted-foreground py-8">No hay pagos registrados</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -429,13 +501,13 @@ const ArqueoCaja = () => {
               </div>
             )}
             {pagosProveedores.length > 0 && (
-              <div className="mt-4 flex justify-end">
-                <div className="space-y-1 text-right">
-                  <p className="text-sm text-muted-foreground">
-                    Total Pagado: ${pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.valor) || 0), 0).toFixed(2)}
+              <div className="mt-6 flex justify-end">
+                <div className="space-y-2 text-right bg-muted p-4 rounded-lg">
+                  <p className="text-sm font-medium">
+                    Total Pagado: <span className="text-lg">${pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.valor) || 0), 0).toFixed(2)}</span>
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    Total Saldo: ${pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.saldo) || 0), 0).toFixed(2)}
+                  <p className="text-sm font-medium">
+                    Total Saldo: <span className="text-lg">${pagosProveedores.reduce((sum, pago) => sum + (parseFloat(pago.saldo) || 0), 0).toFixed(2)}</span>
                   </p>
                 </div>
               </div>
@@ -451,7 +523,7 @@ const ArqueoCaja = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="montoContado">Monto Contado (USD)</Label>
                 <Input
@@ -463,6 +535,7 @@ const ArqueoCaja = () => {
                   onChange={(e) => setFormData({ ...formData, montoContado: e.target.value })}
                   placeholder="0.00"
                   required
+                  className="w-full"
                 />
               </div>
 
@@ -471,8 +544,11 @@ const ArqueoCaja = () => {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     <strong>Diferencia: ${diferencia.toFixed(2)}</strong>
+                    <p className="mt-1 text-sm">
+                      Diferencia entre Total Saldo y Total Pagado
+                    </p>
                     {Math.abs(diferencia) > umbralDiferencia && (
-                      <p className="mt-1 text-sm">
+                      <p className="mt-1 text-sm font-medium">
                         Supera el umbral de $±{umbralDiferencia.toFixed(2)}. Es obligatorio agregar un comentario.
                       </p>
                     )}
@@ -489,12 +565,13 @@ const ArqueoCaja = () => {
                   value={formData.comentario}
                   onChange={(e) => setFormData({ ...formData, comentario: e.target.value })}
                   placeholder="Explica el motivo de la diferencia si existe..."
-                  rows={3}
+                  rows={4}
                   required={requiereComentario}
+                  className="w-full"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-4 pt-6">
                 <Button
                   type="button"
                   variant="outline"

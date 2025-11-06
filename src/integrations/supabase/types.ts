@@ -57,6 +57,7 @@ export type Database = {
           id: string
           monto_contado: number
           monto_esperado: number
+          monto_final: number | null
         }
         Insert: {
           apertura_id: string
@@ -67,6 +68,7 @@ export type Database = {
           id?: string
           monto_contado: number
           monto_esperado: number
+          monto_final?: number | null
         }
         Update: {
           apertura_id?: string
@@ -77,6 +79,7 @@ export type Database = {
           id?: string
           monto_contado?: number
           monto_esperado?: number
+          monto_final?: number | null
         }
         Relationships: [
           {
@@ -205,6 +208,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      empleados: {
+        Row: {
+          activo: boolean | null
+          cargo: string
+          created_at: string | null
+          id: string
+          nombre_completo: string
+        }
+        Insert: {
+          activo?: boolean | null
+          cargo: string
+          created_at?: string | null
+          id?: string
+          nombre_completo: string
+        }
+        Update: {
+          activo?: boolean | null
+          cargo?: string
+          created_at?: string | null
+          id?: string
+          nombre_completo?: string
+        }
+        Relationships: []
       }
       pagos_proveedores: {
         Row: {
@@ -409,6 +436,7 @@ export type Database = {
           hora_inicio: string
           id: string
           usuario_id: string
+          empleado_id: string | null
         }
         Insert: {
           caja_id: string
@@ -419,6 +447,7 @@ export type Database = {
           hora_inicio: string
           id?: string
           usuario_id: string
+          empleado_id?: string | null
         }
         Update: {
           caja_id?: string
@@ -429,6 +458,7 @@ export type Database = {
           hora_inicio?: string
           id?: string
           usuario_id?: string
+          empleado_id?: string | null
         }
         Relationships: [
           {

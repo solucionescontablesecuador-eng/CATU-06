@@ -6,19 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, DollarSign, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { EmpleadoSelector } from "@/components/EmpleadoSelector";
 
 const AperturaCaja = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [cajas, setCajas] = useState<any[]>([]);
+  const [cajaPlantaBaja, setCajaPlantaBaja] = useState<any>(null);
   const [userId, setUserId] = useState<string>("");
-  
+
   const [formData, setFormData] = useState({
-    cajaId: "",
+    empleadoId: "",
     montoInicial: "",
     observaciones: "",
     fecha: new Date().toISOString().split('T')[0],
@@ -31,20 +31,19 @@ const AperturaCaja = () => {
 
   const loadData = async () => {
     try {
-      // Obtener usuario actual
-      // Sin autenticación - usar ID fijo
       const userId = "00000000-0000-0000-0000-000000000000";
       setUserId(userId);
 
-      // Cargar cajas activas
-      const { data: cajasData, error: cajasError } = await supabase
+      const { data: cajaData, error: cajaError } = await supabase
         .from("cajas")
         .select("*")
         .eq("activa", true)
-        .eq("tipo", "comercial");
+        .eq("tipo", "comercial")
+        .eq("ubicacion", "Planta Baja")
+        .single();
 
-      if (cajasError) throw cajasError;
-      setCajas(cajasData || []);
+      if (cajaError) throw cajaError;
+      setCajaPlantaBaja(cajaData);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -69,7 +68,7 @@ const AperturaCaja = () => {
       .eq("estado", "abierto");
 
     if (turnosActivos && turnosActivos.length > 0) {
-      const tieneAperturaActiva = turnosActivos.some((turno: any) => 
+      const tieneAperturaActiva = turnosActivos.some((turno: any) =>
         turno.aperturas && turno.aperturas.some((apertura: any) => !apertura.cerrada)
       );
       return tieneAperturaActiva;
@@ -80,10 +79,19 @@ const AperturaCaja = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.cajaId) {
+    if (!cajaPlantaBaja) {
+      toast({
+        title: "Error",
+        description: "No se encontró la caja de Planta Baja",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.empleadoId) {
       toast({
         title: "Campo requerido",
-        description: "Debes seleccionar una caja",
+        description: "Debes seleccionar un empleado",
         variant: "destructive",
       });
       return;
@@ -92,8 +100,7 @@ const AperturaCaja = () => {
     setLoading(true);
 
     try {
-      // Validar que no haya apertura activa
-      const tieneAperturaActiva = await verificarAperturaActiva(formData.cajaId);
+      const tieneAperturaActiva = await verificarAperturaActiva(cajaPlantaBaja.id);
       if (tieneAperturaActiva) {
         toast({
           title: "Apertura activa existente",
@@ -104,12 +111,12 @@ const AperturaCaja = () => {
         return;
       }
 
-      // Crear turno
       const { data: turno, error: turnoError } = await supabase
         .from("turnos")
         .insert({
-          caja_id: formData.cajaId,
+          caja_id: cajaPlantaBaja.id,
           usuario_id: userId,
+          empleado_id: formData.empleadoId,
           fecha: formData.fecha,
           hora_inicio: formData.horaInicio,
           estado: "abierto",
@@ -119,7 +126,6 @@ const AperturaCaja = () => {
 
       if (turnoError) throw turnoError;
 
-      // Crear apertura
       const { error: aperturaError } = await supabase
         .from("aperturas")
         .insert({
@@ -131,7 +137,7 @@ const AperturaCaja = () => {
       if (aperturaError) throw aperturaError;
 
       toast({
-        title: "¡Turno iniciado!",
+        title: "Turno iniciado",
         description: "La caja ha sido abierta correctamente",
       });
 
@@ -149,26 +155,21 @@ const AperturaCaja = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b bg-card shadow-sm">
+        <div className="container mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary rounded-lg">
-                <DollarSign className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Apertura de Caja</h1>
-                <p className="text-sm text-muted-foreground">Iniciar nuevo turno</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold">Apertura de Caja</h1>
+              <p className="text-sm text-muted-foreground">Iniciar nuevo turno</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
+      <main className="container mx-auto px-6 py-8 max-w-4xl">
         <Card>
           <CardHeader>
             <CardTitle>Datos de Apertura</CardTitle>
@@ -177,8 +178,8 @@ const AperturaCaja = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="fecha">Fecha</Label>
                   <Input
@@ -187,6 +188,7 @@ const AperturaCaja = () => {
                     value={formData.fecha}
                     onChange={(e) => setFormData({ ...formData, fecha: e.target.value })}
                     required
+                    className="w-full"
                   />
                 </div>
 
@@ -198,27 +200,27 @@ const AperturaCaja = () => {
                     value={formData.horaInicio}
                     onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
                     required
+                    className="w-full"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="caja">Caja *</Label>
-                <Select
-                  value={formData.cajaId}
-                  onValueChange={(value) => setFormData({ ...formData, cajaId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona una caja" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cajas.map((caja) => (
-                      <SelectItem key={caja.id} value={caja.id}>
-                        {caja.nombre} - {caja.ubicacion}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Caja</Label>
+                <Input
+                  value={cajaPlantaBaja ? `${cajaPlantaBaja.nombre} - ${cajaPlantaBaja.ubicacion}` : "Cargando..."}
+                  disabled
+                  className="w-full bg-muted"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="empleado">Empleado</Label>
+                <EmpleadoSelector
+                  value={formData.empleadoId}
+                  onChange={(value) => setFormData({ ...formData, empleadoId: value })}
+                  required
+                />
               </div>
 
               <div className="space-y-2">
@@ -232,6 +234,7 @@ const AperturaCaja = () => {
                   onChange={(e) => setFormData({ ...formData, montoInicial: e.target.value })}
                   placeholder="0.00"
                   required
+                  className="w-full"
                 />
               </div>
 
@@ -242,11 +245,12 @@ const AperturaCaja = () => {
                   value={formData.observaciones}
                   onChange={(e) => setFormData({ ...formData, observaciones: e.target.value })}
                   placeholder="Notas adicionales sobre la apertura..."
-                  rows={3}
+                  rows={4}
+                  className="w-full"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-4 pt-6">
                 <Button
                   type="button"
                   variant="outline"

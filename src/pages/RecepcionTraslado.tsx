@@ -71,8 +71,16 @@ const RecepcionTraslado = () => {
           caja_destino:cajas!traslados_caja_destino_id_fkey(nombre, ubicacion),
           arqueos!inner(
             id,
+            monto_contado,
+            monto_final,
             aperturas!inner(
+              monto_inicial,
               turnos!inner(
+                empleado_id,
+                empleados(
+                  nombre_completo,
+                  cargo
+                ),
                 profiles!inner(nombre_completo)
               )
             )
@@ -175,26 +183,21 @@ const RecepcionTraslado = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b bg-card shadow-sm">
+        <div className="container mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-secondary rounded-lg">
-                <CheckCircle className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Recepción de Traslado</h1>
-                <p className="text-sm text-muted-foreground">Caja Principal</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold">Recepción de Traslado</h1>
+              <p className="text-sm text-muted-foreground">Caja Principal</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
+      <main className="container mx-auto px-6 py-8 max-w-4xl">
         {trasladosPendientes.length === 0 ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
@@ -205,34 +208,33 @@ const RecepcionTraslado = () => {
         ) : (
           <div className="space-y-6">
             <div>
-              <h2 className="text-xl font-bold mb-4">Traslados Pendientes</h2>
-              <div className="grid gap-4">
+              <h2 className="text-xl font-bold mb-6">Traslados Pendientes</h2>
+              <div className="grid gap-6">
                 {trasladosPendientes.map((traslado) => {
                   const minutosTransito = calcularTiempoTransito(traslado.fecha_hora_envio);
                   const alertaTransito = minutosTransito > 30;
+                  const empleado = traslado.arqueos.aperturas.turnos.empleados;
 
                   return (
-                    <Card 
+                    <Card
                       key={traslado.id}
-                      className={`cursor-pointer transition-all ${
-                        trasladoSeleccionado?.id === traslado.id 
-                          ? "ring-2 ring-primary" 
-                          : "hover:shadow-md"
+                      className={`cursor-pointer transition-all border-2 ${
+                        trasladoSeleccionado?.id === traslado.id
+                          ? "ring-2 ring-primary border-primary"
+                          : "hover:shadow-lg hover:border-primary"
                       }`}
                       onClick={() => {
                         setTrasladoSeleccionado(traslado);
                         setFormData({ montoRecibido: traslado.monto.toString(), comentario: "" });
                       }}
                     >
-                      <CardContent className="pt-6">
-                        <div className="flex justify-between items-start mb-4">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
                           <div>
-                            <p className="text-sm text-muted-foreground">
-                              De: {traslado.caja_origen.nombre}
-                            </p>
-                            <p className="font-medium text-lg">
-                              ${traslado.monto.toFixed(2)}
-                            </p>
+                            <CardTitle className="text-lg">Traslado de {traslado.caja_origen.nombre}</CardTitle>
+                            <CardDescription className="mt-1">
+                              Enviado: {new Date(traslado.fecha_hora_envio).toLocaleString()}
+                            </CardDescription>
                           </div>
                           <div className="flex gap-2">
                             <Badge variant="secondary">
@@ -244,9 +246,35 @@ const RecepcionTraslado = () => {
                             )}
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          <p>Enviado: {new Date(traslado.fecha_hora_envio).toLocaleString()}</p>
-                          <p>Por: {traslado.arqueos.aperturas.turnos.profiles.nombre_completo}</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Empleado:</span>
+                            <span className="font-medium">
+                              {empleado ? `${empleado.nombre_completo} (${empleado.cargo})` : "No asignado"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Monto Inicial:</span>
+                            <span className="font-medium">${traslado.arqueos.aperturas.monto_inicial?.toFixed(2) || "0.00"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Monto Final:</span>
+                            <span className="font-medium">${traslado.arqueos.monto_final?.toFixed(2) || "0.00"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Monto Contado:</span>
+                            <span className="font-medium">${traslado.arqueos.monto_contado?.toFixed(2) || "0.00"}</span>
+                          </div>
+                        </div>
+                        <div className="border-t pt-4 mt-4">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground text-lg">Monto a recibir:</span>
+                            <span className="font-bold text-2xl text-primary">
+                              ${traslado.monto.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -264,7 +292,7 @@ const RecepcionTraslado = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="space-y-2">
                       <Label htmlFor="montoRecibido">Monto Recibido (USD)</Label>
                       <Input
@@ -276,6 +304,7 @@ const RecepcionTraslado = () => {
                         onChange={(e) => setFormData({ ...formData, montoRecibido: e.target.value })}
                         placeholder="0.00"
                         required
+                        className="w-full"
                       />
                     </div>
 
@@ -300,11 +329,12 @@ const RecepcionTraslado = () => {
                         value={formData.comentario}
                         onChange={(e) => setFormData({ ...formData, comentario: e.target.value })}
                         placeholder="Observaciones sobre la recepción..."
-                        rows={3}
+                        rows={4}
+                        className="w-full"
                       />
                     </div>
 
-                    <div className="flex gap-3 pt-4">
+                    <div className="flex gap-4 pt-6">
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -315,8 +345,8 @@ const RecepcionTraslado = () => {
                       >
                         Cancelar
                       </Button>
-                      <Button 
-                        onClick={handleRecibir} 
+                      <Button
+                        onClick={handleRecibir}
                         disabled={loading}
                         className="flex-1"
                       >

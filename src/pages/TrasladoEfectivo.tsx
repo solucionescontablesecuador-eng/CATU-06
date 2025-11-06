@@ -2,11 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRightLeft, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const TrasladoEfectivo = () => {
@@ -23,23 +21,29 @@ const TrasladoEfectivo = () => {
 
   const loadData = async () => {
     try {
-      // Sin autenticación - usar ID fijo
       const userId = "00000000-0000-0000-0000-000000000000";
 
-      // Buscar último arqueo sin traslado
       const { data: arqueosData } = await supabase
         .from("arqueos")
         .select(`
           id,
           monto_contado,
+          monto_final,
           diferencia,
           fecha_hora,
           aperturas!inner (
             id,
+            monto_inicial,
             turno_id,
             turnos!inner (
               id,
               caja_id,
+              empleado_id,
+              empleados (
+                id,
+                nombre_completo,
+                cargo
+              ),
               cajas!inner (
                 id,
                 nombre,
@@ -58,12 +62,14 @@ const TrasladoEfectivo = () => {
         setUltimoArqueo({
           id: arqueo.id,
           monto: arqueo.monto_contado,
+          monto_inicial: arqueo.aperturas.monto_inicial,
+          monto_final: arqueo.monto_final,
           diferencia: arqueo.diferencia,
           fecha_hora: arqueo.fecha_hora,
           caja_origen: arqueo.aperturas.turnos.cajas,
+          empleado: arqueo.aperturas.turnos.empleados,
         });
 
-        // Obtener caja principal (destino)
         const { data: cajaPrincipal } = await supabase
           .from("cajas")
           .select("*")
@@ -101,7 +107,7 @@ const TrasladoEfectivo = () => {
       if (error) throw error;
 
       toast({
-        title: "¡Traslado creado!",
+        title: "Traslado creado",
         description: "El efectivo está en tránsito a Caja Principal",
       });
 
@@ -131,17 +137,17 @@ const TrasladoEfectivo = () => {
   if (!ultimoArqueo) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="border-b bg-card">
-          <div className="container mx-auto px-4 py-4">
+        <header className="border-b bg-card shadow-sm">
+          <div className="container mx-auto px-6 py-6">
             <div className="flex items-center gap-3">
               <Button variant="outline" size="icon" onClick={() => navigate("/")}>
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <h1 className="text-xl font-bold">Traslado de Efectivo</h1>
+              <h1 className="text-2xl font-bold">Traslado de Efectivo</h1>
             </div>
           </div>
         </header>
-        <main className="container mx-auto px-4 py-8 max-w-2xl">
+        <main className="container mx-auto px-6 py-8 max-w-4xl">
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
@@ -158,27 +164,22 @@ const TrasladoEfectivo = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b bg-card shadow-sm">
+        <div className="container mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-warning rounded-lg">
-                <ArrowRightLeft className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Traslado de Efectivo</h1>
-                <p className="text-sm text-muted-foreground">Enviar a Caja Principal</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold">Traslado de Efectivo</h1>
+              <p className="text-sm text-muted-foreground">Enviar a Caja Principal</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-2xl">
-        <Card className="mb-4">
+      <main className="container mx-auto px-6 py-8 max-w-4xl">
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Último Arqueo Realizado</CardTitle>
             <CardDescription>
@@ -186,21 +187,37 @@ const TrasladoEfectivo = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Caja Origen:</span>
-              <span className="font-medium">{ultimoArqueo.caja_origen.nombre}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Caja Origen:</span>
+                <span className="font-medium">{ultimoArqueo.caja_origen.nombre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Caja Destino:</span>
+                <span className="font-medium">{cajaDestino?.nombre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Empleado:</span>
+                <span className="font-medium">
+                  {ultimoArqueo.empleado ? `${ultimoArqueo.empleado.nombre_completo} (${ultimoArqueo.empleado.cargo})` : "No asignado"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Fecha y hora:</span>
+                <span className="font-medium">
+                  {new Date(ultimoArqueo.fecha_hora).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Monto Inicial:</span>
+                <span className="font-medium">${ultimoArqueo.monto_inicial?.toFixed(2) || "0.00"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Monto Final:</span>
+                <span className="font-medium">${ultimoArqueo.monto_final?.toFixed(2) || "0.00"}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Caja Destino:</span>
-              <span className="font-medium">{cajaDestino?.nombre}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Fecha y hora:</span>
-              <span className="font-medium">
-                {new Date(ultimoArqueo.fecha_hora).toLocaleString()}
-              </span>
-            </div>
-            <div className="border-t pt-3 mt-3">
+            <div className="border-t pt-4 mt-4">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground text-lg">Monto a trasladar:</span>
                 <span className="font-bold text-2xl text-primary">
@@ -235,7 +252,7 @@ const TrasladoEfectivo = () => {
                 </AlertDescription>
               </Alert>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-4 pt-6">
                 <Button
                   variant="outline"
                   onClick={() => navigate("/")}
@@ -243,8 +260,8 @@ const TrasladoEfectivo = () => {
                 >
                   Cancelar
                 </Button>
-                <Button 
-                  onClick={handleCrearTraslado} 
+                <Button
+                  onClick={handleCrearTraslado}
                   disabled={loading}
                   className="flex-1"
                 >
