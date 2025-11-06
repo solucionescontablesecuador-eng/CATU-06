@@ -79,6 +79,16 @@ const AperturaCaja = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.cajaId) {
+      toast({
+        title: "Campo requerido",
+        description: "Debes seleccionar una caja",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -193,11 +203,10 @@ const AperturaCaja = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="caja">Caja</Label>
+                <Label htmlFor="caja">Caja *</Label>
                 <Select
                   value={formData.cajaId}
                   onValueChange={(value) => setFormData({ ...formData, cajaId: value })}
-                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona una caja" />
